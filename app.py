@@ -3,9 +3,15 @@ import google.generativeai as genai
 import plotly.graph_objects as go
 import json
 import os
+import streamlit.components.v1 as components
 
 # 1. 페이지 설정
 st.set_page_config(page_title="맛집 장담 몬한다", page_icon="🚫", layout="centered")
+
+# ==============================================================================
+# [🚨 주인님! 앱 배포 주소 확인하셨죠?]
+# ==============================================================================
+REAL_APP_URL = "https://matjib-monhanda-tfkwuykhzlvyypmg5tipe7.streamlit.app/"
 
 # 2. 토스 스타일 CSS
 st.markdown("""
@@ -21,7 +27,6 @@ st.markdown("""
     div[role="radiogroup"] label:has(input:checked) { background-color: #E8F3FF; border: 2px solid #3182F6; color: #3182F6; font-weight: 700; }
     div[role="radiogroup"] label:has(input:checked) p { color: #3182F6 !important; }
     div[role="radiogroup"] > label > div:first-of-type { display: none; }
-    
     .total-score-val { font-size: 60px; font-weight: 900; color: #3182F6; text-align: center; line-height: 1.0; margin-bottom: 20px; }
     .stat-box { background-color: #F9FAFB; border-radius: 12px; padding: 15px; text-align: center; }
     .stat-val { font-size: 16px; font-weight: 700; color: #333D4B; }
@@ -32,18 +37,15 @@ st.markdown("""
     .detail-card { background-color: #ffffff; border: 1px solid #E5E8EB; border-radius: 16px; padding: 20px; margin-top: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.03); }
     .detail-title { font-size: 18px; font-weight: 700; color: #191F28; margin-bottom: 10px; display: flex; align-items: center; }
     .detail-content { font-size: 16px; line-height: 1.7; color: #333D4B; }
-    
     .action-btn { display: block; width: 100%; padding: 16px; text-align: center; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 16px; margin-top: 10px; }
     .catch-btn { background-color: #FF3B30; color: white; }
     .tabling-btn { background-color: #FF2D55; color: white; }
     .call-btn { background-color: #333D4B; color: white; }
     .naver-btn { background-color: #03C75A; color: white; }
-    
-    /* 후원 버튼 스타일 */
-    .donate-btn {
-        background: linear-gradient(90deg, #FFD700 0%, #FFA500 100%);
-        color: #333D4B;
-    }
+    .share-container { display: flex; gap: 10px; margin-top: 10px; }
+    .share-btn { display: block; width: 100%; padding: 18px; border-radius: 16px; text-align: center; text-decoration: none; font-weight: 700; font-size: 18px; color: #191F28; background-color: #F2F4F6; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .kakao-link { background-color: #FEE500; color: #191F28; } 
+    .insta-link { background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); color: white; }
     
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
@@ -54,30 +56,25 @@ if 'step' not in st.session_state: st.session_state.step = 0
 if 'persona' not in st.session_state: st.session_state.persona = ""
 if 'companion' not in st.session_state: st.session_state.companion = ""
 if 'restaurant' not in st.session_state: st.session_state.restaurant = ""
+if 'show_copy' not in st.session_state: st.session_state.show_copy = False
 
 # 4. API 키 로드
 api_key = None
 if "GOOGLE_API_KEY" in st.secrets: api_key = st.secrets["GOOGLE_API_KEY"]
 
-# 5. [핵심] 캐싱 함수 (돈 아끼는 기능)
-# @st.cache_data 데코레이터를 쓰면, 똑같은 질문에는 AI를 안 부르고 저장된 답을 줍니다.
+# 5. 캐싱 함수
 @st.cache_data(show_spinner=False)
 def analyze_restaurant(_model, restaurant, companion, persona):
-    
-    # 성격 설정
     persona_inst = ""
     if "착한" in persona: persona_inst = "너는 '착한 부산 행님'이다. 친절한 사투리 사용. 내용은 구체적으로."
     elif "지옥" in persona: persona_inst = "너는 '지옥의 독설가'다. 거친 부산 사투리 사용. 내용은 아주 구체적으로."
     else: persona_inst = "너는 '친근한 동네 형'이다. 수다스러운 TMI 스타일. 부산 사투리 사용."
 
     companion_key = companion.split(' ')[1]
-    
     prompt = f"""
     {persona_inst}
     식당: {restaurant}, 동행: {companion_key}
-    [규칙] 
-    1. 메뉴 팩트체크 필수. 
-    2. 점수는 100점 만점 기준.
+    [규칙] 1. 메뉴 팩트체크 필수. 2. 점수는 100점 만점 기준.
     JSON 포맷: {{ "scores": [맛,가성비,서비스,위생,분위기], "summary": "한줄평", "hours": "시간", "reservation": "예약", "phone": "번호", "menu_tip": "꿀조합", "atmosphere": "분위기", "verdict": "결론" }}
     """
     response = _model.generate_content(prompt)
@@ -138,9 +135,9 @@ elif st.session_state.step == 3:
 elif st.session_state.step == 4:
     col_nav1, col_nav2 = st.columns([1, 1])
     with col_nav1:
-        if st.button("← 다른 식당"): st.session_state.step = 3; st.rerun()
+        if st.button("← 다른 식당"): st.session_state.step = 3; st.session_state.show_copy = False; st.rerun()
     with col_nav2:
-        if st.button("🔄 처음으로"): st.session_state.step = 0; st.session_state.restaurant = ""; st.rerun()
+        if st.button("🔄 처음으로"): st.session_state.step = 0; st.session_state.restaurant = ""; st.session_state.show_copy = False; st.rerun()
 
     if not api_key: st.error("⚠️ API 키가 없습니다."); st.stop()
     
@@ -153,10 +150,8 @@ elif st.session_state.step == 4:
         model = genai.GenerativeModel(target_model)
 
         with st.spinner('AI 행님이 점수 계산기 두드리는 중...'):
-            # [수정] 캐싱된 함수 호출
             result_text = analyze_restaurant(model, st.session_state.restaurant, st.session_state.companion, st.session_state.persona)
             
-            # JSON 파싱
             data = None
             try:
                 clean_text = result_text.replace("```json", "").replace("```", "").strip()
@@ -167,7 +162,6 @@ elif st.session_state.step == 4:
             except:
                 data = { "scores": [50,50,50,50,50], "summary": "분석 실패. 다시 시도해주이소.", "hours":"정보없음", "reservation":"", "phone":"", "menu_tip":"오류발생", "atmosphere":"", "verdict":"" }
 
-            # 점수 변환
             raw_scores = data.get("scores", [50, 50, 50, 50, 50])
             if sum(raw_scores) / 5 <= 10: scores = [int(s * 20) for s in raw_scores]
             else: scores = [int(s) for s in raw_scores]
@@ -205,18 +199,62 @@ elif st.session_state.step == 4:
             <div class='detail-card'><div class='detail-title'>⚖️ 최종 판결</div><div class='detail-content' style='font-weight:700; color:#3182F6;'>{verdict}</div></div>
             """, unsafe_allow_html=True)
             
-            # [돈 벌기] 복사하기 & 후원하기 버튼
             st.markdown("---")
-            copy_text = f"[{st.session_state.restaurant}] 맛집 장담 몬한다 분석 결과\n종합점수: {total_score}점\n한줄평: {data['summary']}\n\n👉 나도 분석하러 가기: https://share.streamlit.io"
-            st.code(copy_text, language="text")
-            st.caption("👆 위 내용을 복사해서 친구한테 보내주이소.")
             
-            # [후원 버튼] - 본인의 토스 익명 송금 주소나 카카오페이 코드를 넣으세요
-            st.markdown(f"""
-            <a href='https://toss.me/주인님아이디' target='_blank' class='action-btn donate-btn'>
-                ☕ 개발자 행님 커피 한 잔 사주기
-            </a>
-            """, unsafe_allow_html=True)
+            # [공유 기능]
+            copy_text = f"[{st.session_state.restaurant}] 맛집 장담 몬한다 분석\\n종합점수: {total_score}점\\n한줄평: {data['summary']}\\n\\n👉 나도 분석하러 가기: {REAL_APP_URL}"
+            safe_copy_text = copy_text.replace("'", "\\'")
+
+            col_s1, col_s2, col_s3 = st.columns(3)
+            with col_s1:
+                # 1. 📢 친구한테 자랑하기 (글 띄우기 트리거)
+                if st.button("📢 자랑하기", use_container_width=True):
+                    st.session_state.show_copy = True
+            with col_s2:
+                # 2. 카카오톡
+                st.markdown(f"<a href='kakaotalk://' class='share-btn kakao-link' target='_blank'>🟡 카카오톡</a>", unsafe_allow_html=True)
+            with col_s3:
+                # 3. 인스타그램
+                st.markdown(f"<a href='instagram://' class='share-btn insta-link' target='_blank'>🟣 인스타그램</a>", unsafe_allow_html=True)
+            
+            # [자랑하기 버튼 눌렀을 때만 표시되는 영역]
+            if st.session_state.show_copy:
+                st.markdown("<div style='margin-top: 10px; font-weight: 700; color: #3182F6;'>👇 아래 글을 복사해서 보내세요!</div>", unsafe_allow_html=True)
+                st.code(copy_text.replace("\\n", "\n"), language="text") # 실제 줄바꿈으로 변환해서 보여줌
+                
+                # 원터치 복사 버튼 (JS) - 텍스트 박스 바로 아래 배치
+                components.html(f"""
+                <html>
+                    <head>
+                        <style>
+                            @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+                            body {{ margin: 0; font-family: 'Pretendard', sans-serif; }}
+                            .copy-btn {{
+                                display: block; width: 100%; padding: 16px; border-radius: 12px;
+                                text-align: center; text-decoration: none; font-weight: 700; font-size: 16px;
+                                color: white; background-color: #333D4B; border: none; cursor: pointer;
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: 0.2s;
+                            }}
+                            .copy-btn:hover {{ background-color: #191F28; }}
+                        </style>
+                    </head>
+                    <body>
+                        <button class="copy-btn" onclick="copyText()">📋 원터치 복사 (클릭)</button>
+                        <script>
+                            function copyText() {{
+                                const text = '{safe_copy_text}';
+                                navigator.clipboard.writeText(text).then(function() {{
+                                    alert('복사되었습니다! 카톡창에 붙여넣기 하세요.');
+                                }}, function(err) {{
+                                    alert('복사 실패. 위 텍스트 박스를 직접 복사해주세요.');
+                                }});
+                            }}
+                        </script>
+                    </body>
+                </html>
+                """, height=60)
+            
+            st.markdown("---")
 
             # 예약/지도 버튼
             res_type = data.get('reservation', '')
